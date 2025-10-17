@@ -164,6 +164,7 @@ spring:
 - And it will work just as before.
 
 ## Dynamic approach for registering services
+
 - Now we will disable the file `application.yml` by changing its name and add the following method to application class.
 ```java
 @Bean
@@ -183,14 +184,103 @@ http://localhost:8888/CUSTOMER-SERVICE/api/customers
 spring.cloud.gateway.server.webflux.discovery.locator.lower-case-service-id=true
 ```
 
+## Billing service
 
+### Dependencies
 
+![dependencies of billing service](img/img_8.png)
 
+- There is some new dependencies here like openFeign that we'll use to communicate with other services using rest api.
 
+### Service components
 
+- As well as the previous services we will create the models which are `Bill` and `ProductItem`, but we will also create the models that we need from the other services but without `@Entity` annotation to tell spring not to save them. also, we'll add `@Transient` annotation to in the entities attribute to tell jpa not to consider them as persistence classes.
 
+```java
+@Entity
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class Bill {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private LocalDateTime billingDate;
+    private long customerId;
+    @OneToMany(mappedBy = "bill")
+    private List<ProductItem> productItems = new ArrayList<ProductItem>();
+    @Transient
+    private Customer customer;
+}
 
+@Entity
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class ProductItem {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String productId;
+    @ManyToOne
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private Bill bill;
+    private int quantity;
+    private double unitPrice;
+    @Transient
+    private Product product;
+}
+```
 
+### Feign client
+
+- `openFeign` is a dependency that helps us to connect with other services using rest api.
+- We create for each service an interface with the annotation `@FeignClient` and pass the name of the service as parameter.
+- Inside the interface we define the methods with the get or post method annotation with the path of the rest api request.
+```java
+@FeignClient(name = "customer-service")
+public interface CustomerRestClient {
+    @GetMapping("/api/customers/{customerId}")
+    Customer findCustomerById(@PathVariable Long customerId);
+
+    @GetMapping("/api/customers")
+    List<Customer> findAllCustomers();
+}
+```
+- We need also to enable the feign clients processing in starter class with the annotation `@EnableFeignClients`.
+```java
+@SpringBootApplication
+@EnableFeignClients
+public class BillingServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(BillingServiceApplication.class, args);
+    }
+}
+```
+- Feign client dependency also create an instance of the interfaces with `@FeignClient` annotation. That means we can inject it and use it somewhere like spring data repositories.
+- We will create a rest controller of bills to get the customers and the products from the other services, we are creating a get method.
+```java
+@RestController
+@AllArgsConstructor
+public class BillRestController {
+    private BillRepository billRepository;
+    private CustomerRestClient customerRestClient;
+    private ProductRestClient productRestClient;
+
+    @GetMapping("/bills/{id}")
+    public Bill getBill(@PathVariable Long id) {
+        Bill bill = billRepository.findById(id).get();
+        bill.setCustomer(customerRestClient.findCustomerById(bill.getCustomerId()));
+        bill.getProductItems().forEach(productItem -> {
+            productItem.setProduct(productRestClient.getProductById(productItem.getProductId()));
+        });
+        return bill;
+    }
+}
+```
 
 
 
