@@ -1,6 +1,6 @@
-# First microservices app
+## First microservices app
 - in this project we will create our first microservices while diving deep into the architecture and its core components.
-# Objectives
+## Objectives
 - creating the three essential components `discovery-service`, `gateway-service` and `config-service` and creating three microservices `customer-service`, `inventory-service` and `billing-service`, and see how communication is done between the services.
 
 ## Customer Service
@@ -282,13 +282,118 @@ public class BillRestController {
 }
 ```
 
+## Configuration service
 
+### Dependencies
 
+- First thing first we create another module with the dependencies: `config server`, `actuator` and `eureka client`.
 
+### Config repo
 
+- We need to enable the config property in the starter class with the annotation `@@EnableConfigServer`.
+```java
+@SpringBootApplication
+@EnableConfigServer
+public class ConfigServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(ConfigServiceApplication.class, args);
+    }
+}
+```
+- The config service uses another repository git to manage the properties.
+- we create another folder with its own git configuration.
 
+![configuration folder](img/img_9.png)
 
+- we use the following property, for now we are using a local folder, but it still needs a git on it, if used a remote git repository we specify its link instead of the local folder.
+```properties
+spring.cloud.config.server.git.uri=file:///C:/Users/mouad/IdeaProjects/micro-services-app/config-repo
+```
+- We can inspect the configurations from the url.
+```
+http://localhost:9999/propertyFileName/default | dev | prod
+```
 
+![config inspection](img/img_10.png)
+
+### Enable Config for the services
+- We are taking customer service for example.
+- We enable the property of config client in the microservice.
+- We add new property `spring.config.import` where we put the link of the config service.
+```properties
+spring.cloud.config.enabled=true
+spring.config.import=optional:configserver:http://localhost:9999
+```
+- we create a rest controller to test the configs we are importing.
+```java
+@RestController
+public class ConfigTestRestController {
+    @Value("${global.params.p1}")
+    private String p1;
+    @Value("${global.params.p2}")
+    private String p2;
+
+    @GetMapping("/testConfig1")
+    public Map<String , String> configTest() {
+        return Map.of("p1", p1, "p2", p2);
+    }
+}
+```
+
+![config test with customer rest controller](img/img_11.png)
+
+- There is another method which is to get the config parameters in runtime. we use a record with the annotation `@ConfigurationProperties(prefix = "param.param")`.
+```java
+@ConfigurationProperties(prefix = "customer.params")
+public record CustomerConfigParam(int x, int y) {
+}
+```
+- But we need to enable it in starter class with the annotation `@EnableConfigurationProperties(ConfigRecordName.class)`.
+```java
+@SpringBootApplication
+@EnableConfigurationProperties(CustomerConfigParam.class)
+public class CustomerServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(CustomerServiceApplication.class, args);
+    }
+}
+```
+- We add another method in the controller to test this method.
+```java
+@GetMapping("/testConfig2")
+public CustomerConfigParam configTest2() {
+    return customerConfigParam;
+}
+```
+
+![test config 2](img/img_12.png)
+
+### Refresh the configuration
+
+- If we want the service to refresh after changing the configurations we need it to have the property of actuator `management.endpoints.web.exposure.include=refresh` and the controller should have the annotation `@RefreshScope` which tells spring to reinitialize the controller after being refreshed.
+```java
+@RestController
+@RefreshScope
+public class ConfigTestRestController {
+    @Value("${global.params.p1}")
+    private String p1;
+    @Value("${global.params.p2}")
+    private String p2;
+    ...
+}
+```
+- After changing the configurations we make a new commit and send a POST request to `http://localhost:portService/actuator/refresh`.
+- And then the service refresh the configuration.
+- Now if we take the configurations from the local `application.property` to `customer-service.property` in the config repo, it will work smoothly.
+- We do it with all the services except gateway service.
+
+### Put the configuration into a remote repository
+
+- Now we will create a GitHub repository for the config repo.
+
+![config repo github](img/img_13.png)
+
+- Then we clean the configuration files and gather the common ones in `application.properties`.
 
 
 
